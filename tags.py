@@ -86,6 +86,19 @@ class S3():
     def put_tags(self,obj,tags):
         return self.s3.put_object_tagging(Bucket=self.bucket, Key=obj)
 
+    @handle_error(fatal=False)
+    def list_objects(self):
+        return self.s3.list_objects_v2(Bucket=self.bucket)
+
+    @handle_error(fatal=False)
+    def cleanup(self):
+        l = self.list_objects()
+        multi_delete_keys = [{'Key': key['Key']} for key in l['Contents']]
+        self.s3.delete_objects(Bucket=self.bucket,
+                               Delete={'Objects': multi_delete_keys})
+
+        return self.s3.delete_bucket(Bucket=self.bucket)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='test s3 tags')
     parser.add_argument('--access', type=str, default='access',
