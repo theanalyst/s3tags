@@ -15,14 +15,19 @@ def make_random_string(size):
     return ''.join(random.choice(string.ascii_letters) for _ in range(size))
 
 
-def log_error(req):
-    @wraps(req)
-    def call_req(*args,**kwargs):
-        try:
-            req(*args,**kwargs)
-        except botocore.exceptions.ClientError as e:
-            logging.getLogger(__name__).error(e)
-    return call_req
+def handle_error(fatal=False):
+    def make_req(req):
+        @wraps(req)
+        def call_req(*args,**kwargs):
+            try:
+                return req(*args,**kwargs)
+            except botocore.exceptions.ClientError as e:
+                logger = logging.getLogger(__name__)
+                logger.error(e)
+                if fatal:
+                    logger.error('Fatal error, cannot continue after %s failure, exiting' % req.__name__)
+        return call_req
+    return make_req
 
 class S3():
     def __init__(self, access, secret, endpoint, bucket, debug=True, region='us-east-1'):
@@ -50,33 +55,34 @@ class S3():
 
         return {'TagSet':tag_list}
 
-    @log_error
+    @handle_error(fatal=True)
     def _create_bucket(self):
         return self.s3.create_bucket(Bucket=self.bucket)
 
-    @log_error
+    @handle_error()
     def get_or_create_bucket(self):
         try:
-            return self.s3.head_bucket(Bucket=self.bucket)
+            self.s3.head_bucket(Bucket=self.bucket)
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] != '404':
                 raise  # our logger will catch this!
             return self._create_bucket()
+        return True
 
-    @log_error
+    @handle_error(fatal=False)
     def put_object(self,obj,body='abcd',tags=None):
         s3_put_obj = partial(self.s3.put_object,Bucket=self.bucket, Key=obj, Body=body)
 
         if tags is not None:
-            s3_put_obj(Tagging=tags)
+            return s3_put_obj(Tagging=tags)
         else:
-            s3_put_obj()
+            return s3_put_obj()
 
-    @log_error
+    @handle_error(fatal=False)
     def get_tags(self, obj):
         return self.s3.get_object_tagging(Bucket=self.bucket, Key=obj)
 
-    @log_error
+    @handle_error(fatal=False)
     def put_tags(self,obj,tags):
         return self.s3.put_object_tagging(Bucket=self.bucket, Key=obj)
 
