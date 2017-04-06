@@ -5,6 +5,7 @@ import string
 import random
 
 from functools import wraps, partial
+from urllib.parse import urlencode
 
 import boto3
 import botocore
@@ -70,13 +71,17 @@ class S3():
         return True
 
     @handle_error(fatal=False)
-    def put_object(self,obj,body='abcd',tags=None):
+    def put_object(self,obj,body='abcd',tags=None,tagmap=None):
         s3_put_obj = partial(self.s3.put_object,Bucket=self.bucket, Key=obj, Body=body)
 
         if tags is not None:
             return s3_put_obj(Tagging=tags)
+        elif tagmap is not None:
+            tags=urlencode(tagmap)
+            return s3_put_obj(Tagging=tags)
         else:
             return s3_put_obj()
+
 
     @handle_error(fatal=False)
     def get_tags(self, obj):
@@ -84,7 +89,7 @@ class S3():
 
     @handle_error(fatal=False)
     def put_tags(self,obj,tags):
-        return self.s3.put_object_tagging(Bucket=self.bucket, Key=obj)
+        return self.s3.put_object_tagging(Bucket=self.bucket, Key=obj, Tagging=self.make_tags(tags))
 
     @handle_error(fatal=False)
     def list_objects(self):
@@ -118,3 +123,32 @@ if __name__ == "__main__":
     s3test.get_or_create_bucket()
     s3test.put_object('foo','abcdefg')
     s3test.put_object('foobar','abcde','')
+    s3test.put_object('simple','abc','foo')
+    s3test.put_object('single','abc','foo=bar')
+    s3test.put_object('complex','abc','foo=bar&baz')
+    s3test.put_object('invalid','abc','foo=bar&=bzf==')
+    s3test.put_object('invalid3','abc','foo=bar&foo=baz')
+
+    s3test.put_object('invalid2','abc',tagmap={
+        "foo":"bar",
+        "baz":"foobar===",
+        "=":""
+    })
+
+    s3test.put_object('invalid3','abc',tagmap={
+        "foo":"bar",
+        "baz":"foobar=",
+        "foo=bar2":"baz"
+    })
+
+    print(s3test.get_tags('foobar'))
+    print(s3test.get_tags('simple'))
+    print(s3test.get_tags('single'))
+    print(s3test.get_tags('foobar'))
+    print(s3test.get_tags('complex'))
+    print(s3test.get_tags('invalid'))
+    print(s3test.get_tags('invalid2'))
+    print(s3test.get_tags('invalid3'))
+
+    if args.cleanup:
+        s3test.cleanup()
